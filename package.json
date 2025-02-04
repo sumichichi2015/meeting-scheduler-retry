@@ -1,0 +1,25 @@
+{
+  "name": "meeting-scheduler",
+  "version": "1.0.0",
+  "description": "シンプルな会議調整ツール",
+  "scripts": {
+    "dev": "vite --port 3002",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^4.3.4",
+    "pinia": "^2.1.6",
+    "tailwindcss": "^3.3.3",
+    "vite": "^4.4.9",
+    "vue": "^3.3.4",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vue/test-utils": "^2.4.1",
+    "autoprefixer": "^10.4.15",
+    "postcss": "^8.4.29",
+    "vitest": "^0.34.4"
+  }
+}

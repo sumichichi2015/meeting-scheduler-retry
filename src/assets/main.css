@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* カスタムスタイル */
+.calendar-day {
+  @apply w-full aspect-square flex items-center justify-center rounded-md cursor-pointer text-sm;
+}
+
+.calendar-day.selected {
+  @apply bg-indigo-600 text-white;
+}
+
+.calendar-day.disabled {
+  @apply bg-gray-100 text-gray-400 cursor-not-allowed;
+}
+
+.status-button {
+  @apply px-3 py-1 rounded-md text-sm font-medium transition-colors duration-200;
+}
+
+/* レスポンシブデザイン */
+@media (max-width: 640px) {
+  .grid-cols-7 {
+    @apply grid-cols-4;
+  }
+}
