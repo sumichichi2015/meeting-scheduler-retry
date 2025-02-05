@@ -52,25 +52,49 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
+  modelValue: {
+    type: Object,
+    default: () => ({})
+  },
   selectedDates: {
     type: Array,
     required: true
   },
-  modelValue: {
+  timeRange: {
     type: Object,
-    default: () => ({})
+    required: true,
+    validator: (value) => {
+      return value.start && value.end;
+    }
   }
 });
 
 const emit = defineEmits(['update:modelValue']);
 
-// 時間枠の生成（9:00-20:00）
+// 時間枠の生成（選択された範囲内のみ）
 const timeSlots = computed(() => {
   const slots = [];
-  for (let hour = 9; hour < 20; hour++) {
-    slots.push(`${hour}:00`);
-    slots.push(`${hour}:30`);
+  const [startHour, startMinute] = props.timeRange.start.split(':').map(Number);
+  const [endHour, endMinute] = props.timeRange.end.split(':').map(Number);
+  
+  let currentHour = startHour;
+  let currentMinute = startMinute;
+  
+  while (
+    currentHour < endHour ||
+    (currentHour === endHour && currentMinute < endMinute)
+  ) {
+    slots.push(
+      `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`
+    );
+    
+    currentMinute += 30;
+    if (currentMinute >= 60) {
+      currentHour++;
+      currentMinute = 0;
+    }
   }
+  
   return slots;
 });
 
@@ -90,14 +114,13 @@ const formatDate = (date) => {
 
 // 時間のフォーマット
 const formatTime = (time) => {
-  const [hour, minute] = time.split(':');
-  return `${hour}:${minute || '00'} ～`;
+  return `${time} ～`;
 };
 
 // 時間枠の選択状態確認
 const isSelected = (date, time) => {
   const dateKey = new Date(date).toISOString().split('T')[0];
-  return currentSelection.value[dateKey]?.includes(time) ?? true;
+  return currentSelection.value[dateKey]?.includes(time) ?? false;
 };
 
 // ドラッグ開始
@@ -126,7 +149,7 @@ const stopDragging = () => {
 const toggleTimeSlot = (date, time, forcedValue) => {
   const dateKey = new Date(date).toISOString().split('T')[0];
   if (!currentSelection.value[dateKey]) {
-    currentSelection.value[dateKey] = timeSlots.value.slice();
+    currentSelection.value[dateKey] = [];
   }
 
   const timeIndex = currentSelection.value[dateKey].indexOf(time);
@@ -151,14 +174,7 @@ onUnmounted(() => {
 
 // 初期状態の設定
 onMounted(() => {
-  // 全ての日付に対して、デフォルトですべての時間枠を選択状態にする
-  const initialSelection = {};
-  props.selectedDates.forEach(date => {
-    const dateKey = new Date(date).toISOString().split('T')[0];
-    initialSelection[dateKey] = timeSlots.value.slice();
-  });
-  currentSelection.value = initialSelection;
-  emit('update:modelValue', initialSelection);
+  currentSelection.value = {...props.modelValue};
 });
 </script>
 

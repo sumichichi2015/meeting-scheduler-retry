@@ -1,119 +1,103 @@
 <template>
-  <div class="bg-white shadow sm:rounded-lg">
-    <div class="px-4 py-5 sm:p-6">
-      <template v-if="meeting">
-        <h2 class="text-lg font-medium text-gray-900">{{ meeting.name }}</h2>
-        <p class="mt-1 text-sm text-gray-500">主催者: {{ meeting.organizer }}</p>
-        <p class="mt-1 text-sm text-gray-500">
-          時間帯: {{ meeting.startTime }} - {{ meeting.endTime }}
-        </p>
+  <div class="max-w-4xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-6">会議への参加</h1>
 
-        <!-- 参加者名入力（未回答時のみ表示） -->
-        <div v-if="!hasResponded" class="mt-5">
-          <label for="participant-name" class="block text-sm font-medium text-gray-700">お名前</label>
+    <div v-if="error" class="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
+      <p class="text-red-600">{{ error }}</p>
+    </div>
+
+    <div class="mb-6">
+      <h2 class="text-lg font-semibold mb-3">参加者情報</h2>
+      <div class="space-y-4">
+        <div>
+          <label for="name" class="block text-sm font-medium text-gray-700">お名前</label>
           <input
             type="text"
-            id="participant-name"
+            id="name"
             v-model="participantName"
-            maxlength="50"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            placeholder="名前を入力してください"
+            class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="山田 太郎"
           />
         </div>
+      </div>
+    </div>
 
-        <!-- 候補日の出欠選択 -->
-        <div class="mt-5">
-          <h3 class="text-sm font-medium text-gray-700">候補日時</h3>
-          <div class="mt-2 space-y-4">
-            <div v-for="date in meeting.dates" :key="date" class="flex items-center space-x-4">
-              <span class="w-48">{{ formatDate(date) }}</span>
-              <div class="flex space-x-2">
-                <button
-                  v-for="status in ['○', '△', '×']"
-                  :key="status"
-                  @click="selectStatus(date, status)"
-                  :class="[
-                    'px-4 py-2 rounded-md text-sm font-medium',
-                    getStatusButtonClass(status, getDateStatus(date))
-                  ]"
+    <div v-if="meeting" class="mb-6">
+      <h2 class="text-lg font-semibold mb-3">会議の詳細</h2>
+      <div class="bg-gray-50 p-4 rounded-lg space-y-4">
+        <div v-for="(dateData, date) in meeting.dates" :key="date">
+          <h3 class="font-medium text-gray-900 mb-2">{{ formatDate(date) }}</h3>
+          <div class="bg-white shadow-sm rounded-lg overflow-hidden">
+            <div class="space-y-4">
+              <div class="grid gap-2 select-none"
+                   @mousedown="startDrag"
+                   @mousemove="handleDrag"
+                   @mouseup="endDrag"
+                   @mouseleave="endDrag">
+                <div
+                  v-for="(slot, index) in dateData.timeSlots"
+                  :key="`${date}-${slot.start}-${slot.end}`"
+                  class="bg-yellow-50 p-3 rounded-lg flex items-center justify-between cursor-pointer hover:bg-yellow-100 transition-colors duration-150"
+                  :class="{ 'bg-blue-100': isSlotSelected(date, slot.start, slot.end) }"
+                  :data-date="date"
+                  :data-start="slot.start"
+                  :data-end="slot.end"
+                  @click="!isDragging && cycleResponse(date, slot.start, slot.end)"
                 >
-                  {{ status }}
-                </button>
+                  <span class="text-gray-900">
+                    {{ slot.start }} 〜 {{ slot.end }}
+                  </span>
+                  <span 
+                    class="w-8 h-8 flex items-center justify-center rounded-full text-lg font-medium transition-all duration-150"
+                    :class="{
+                      'bg-green-100 text-green-700': getResponse(date, slot.start, slot.end) === '◯',
+                      'bg-yellow-100 text-yellow-700': getResponse(date, slot.start, slot.end) === '△',
+                      'bg-red-100 text-red-700': getResponse(date, slot.start, slot.end) === '×'
+                    }"
+                  >
+                    {{ getResponse(date, slot.start, slot.end) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 参加者一覧 -->
+          <div class="mt-4 bg-white rounded-lg p-4">
+            <h4 class="text-sm font-medium text-gray-700 mb-2">回答済み参加者</h4>
+            <div class="space-y-2">
+              <div v-for="participant in meeting.participants" :key="participant.id" class="text-sm">
+                <div class="flex items-start">
+                  <div class="font-medium text-gray-900">{{ participant.name }}</div>
+                  <div v-if="participant.comment" class="ml-4 text-gray-500">
+                    {{ participant.comment }}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
-
-        <!-- コメント入力 -->
-        <div class="mt-5">
-          <label for="comment" class="block text-sm font-medium text-gray-700">コメント（任意）</label>
-          <textarea
-            id="comment"
-            v-model="comment"
-            rows="3"
-            maxlength="200"
-            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            placeholder="希望や条件があればご記入ください"
-          ></textarea>
-          <p class="mt-1 text-sm text-gray-500">{{ comment.length }}/200文字</p>
-        </div>
-
-        <!-- 送信ボタン -->
-        <div class="mt-5">
-          <button
-            type="button"
-            @click="submitResponse"
-            :disabled="!isValid"
-            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-          >
-            {{ hasResponded ? '更新' : '送信' }}
-          </button>
-        </div>
-
-        <!-- エラーメッセージ -->
-        <div v-if="error" class="mt-4 p-4 bg-red-50 rounded-md">
-          <p class="text-sm text-red-700">{{ error }}</p>
-        </div>
-
-        <!-- 参加者一覧 -->
-        <div class="mt-8">
-          <h3 class="text-sm font-medium text-gray-700">参加者一覧</h3>
-          <div class="mt-2">
-            <div class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">参加者</th>
-                    <th v-for="date in meeting.dates" :key="date" class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {{ formatDateShort(date) }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                  <tr v-for="participant in meeting.participants" :key="participant.id">
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                      {{ participant.name }}
-                      <div class="text-xs text-gray-500">{{ formatTime(participant.joinedAt) }}</div>
-                    </td>
-                    <td v-for="date in meeting.dates" :key="date" class="px-4 py-3 text-center whitespace-nowrap text-sm">
-                      <span :class="getStatusClass(participant.responses[date])">
-                        {{ participant.responses[date] || '未回答' }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </template>
-      <div v-else-if="loading" class="text-center py-8">
-        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent"></div>
-        <p class="mt-2 text-gray-600">読み込み中...</p>
       </div>
-      <div v-else class="text-center text-red-600 py-8">
-        会議が見つかりません
-      </div>
+    </div>
+
+    <div class="mb-6">
+      <h2 class="text-lg font-semibold mb-3">コメント</h2>
+      <textarea
+        v-model="comment"
+        rows="3"
+        class="block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        placeholder="備考やコメントがあればご記入ください"
+      ></textarea>
+    </div>
+
+    <div class="flex justify-end">
+      <button
+        @click="handleSubmit"
+        :disabled="!canSubmit"
+        class="px-4 py-2 bg-indigo-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
+      >
+        回答を送信する
+      </button>
     </div>
   </div>
 </template>
@@ -127,110 +111,168 @@ const route = useRoute();
 const router = useRouter();
 const meetingStore = useMeetingStore();
 
-const loading = ref(true);
-const error = ref(null);
+const meetingId = computed(() => route.params.id);
+const meeting = ref(null);
 const participantName = ref('');
 const comment = ref('');
+const error = ref('');
 const responses = ref({});
 
-const meeting = computed(() => meetingStore.getMeeting(route.params.id));
+// ドラッグ選択の状態管理
+const isDragging = ref(false);
+const dragStartElement = ref(null);
+const selectedSlots = ref(new Set());
 
-const hasResponded = computed(() => {
-  return meeting.value?.participants.some(p => p.name === participantName.value);
-});
-
-const isValid = computed(() => {
-  return participantName.value.trim() && 
-         Object.keys(responses.value).length > 0;
-});
-
-const formatDate = (date) => {
-  return new Date(date).toLocaleDateString('ja-JP', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short'
-  });
+// ドラッグ開始
+const startDrag = (event) => {
+  if (!event.target.closest('[data-date]')) return;
+  
+  isDragging.value = true;
+  dragStartElement.value = event.target.closest('[data-date]');
+  selectedSlots.value.clear();
+  
+  const date = dragStartElement.value.dataset.date;
+  const start = dragStartElement.value.dataset.start;
+  const end = dragStartElement.value.dataset.end;
+  selectedSlots.value.add(`${date}|${start}|${end}`);
 };
 
-const formatDateShort = (date) => {
-  return new Date(date).toLocaleDateString('ja-JP', {
-    month: 'numeric',
-    day: 'numeric',
-    weekday: 'short'
-  });
+// ドラッグ中
+const handleDrag = (event) => {
+  if (!isDragging.value) return;
+  
+  const element = event.target.closest('[data-date]');
+  if (!element) return;
+  
+  const date = element.dataset.date;
+  const start = element.dataset.start;
+  const end = element.dataset.end;
+  selectedSlots.value.add(`${date}|${start}|${end}`);
 };
 
-const formatTime = (datetime) => {
-  return new Date(datetime).toLocaleTimeString('ja-JP', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-};
-
-const getStatusButtonClass = (status, currentStatus) => {
-  const isSelected = status === currentStatus;
-  switch (status) {
-    case '○':
-      return isSelected ? 'bg-green-600 text-white' : 'bg-green-100 text-green-800';
-    case '△':
-      return isSelected ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-800';
-    case '×':
-      return isSelected ? 'bg-red-600 text-white' : 'bg-red-100 text-red-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
+// ドラッグ終了
+const endDrag = () => {
+  if (!isDragging.value) return;
+  
+  if (selectedSlots.value.size > 0) {
+    cycleSelectedResponses();
   }
+  
+  isDragging.value = false;
+  dragStartElement.value = null;
+  selectedSlots.value.clear();
 };
 
-const getStatusClass = (status) => {
-  switch (status) {
-    case '○':
-      return 'text-green-600 font-medium';
-    case '△':
-      return 'text-yellow-600 font-medium';
-    case '×':
-      return 'text-red-600 font-medium';
-    default:
-      return 'text-gray-400';
-  }
+// 選択された時間枠かどうかを判定
+const isSlotSelected = (date, start, end) => {
+  return selectedSlots.value.has(`${date}|${start}|${end}`);
 };
 
-const selectStatus = (date, status) => {
-  responses.value = {
-    ...responses.value,
-    [date]: status
-  };
-};
-
-const getDateStatus = (date) => {
-  return responses.value[date] || null;
-};
-
-const submitResponse = async () => {
-  try {
-    error.value = null;
-    const participantData = {
-      name: participantName.value,
-      responses: responses.value,
-      comment: comment.value
-    };
+// 選択された時間枠の回答をまとめて切り替え
+const cycleSelectedResponses = () => {
+  // 選択された各時間枠について、それぞれの現在の回答の次の回答に変更
+  selectedSlots.value.forEach(slot => {
+    const [date, start, end] = slot.split('|');
+    const currentResponse = getResponse(date, start, end);
     
-    await meetingStore.joinMeeting(route.params.id, participantData);
-    // 成功メッセージを表示
+    // 各回答の次の回答を決定（◯→△→×→◯）
+    const nextResponse = {
+      '◯': '△',
+      '△': '×',
+      '×': '◯'
+    }[currentResponse];
+    
+    // 回答を更新
+    if (!responses.value[date]) {
+      responses.value[date] = {};
+    }
+    responses.value[date][`${start}-${end}`] = nextResponse;
+  });
+};
+
+// 日付のフォーマット
+const formatDate = (dateStr) => {
+  const date = new Date(dateStr);
+  const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()];
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 (${dayOfWeek})`;
+};
+
+// 時間枠の回答を取得
+const getResponse = (date, startTime, endTime) => {
+  if (!responses.value[date]) {
+    responses.value[date] = {};
+  }
+  const key = `${startTime}-${endTime}`;
+  if (responses.value[date][key] === undefined) {
+    responses.value[date][key] = '◯'; // デフォルトは◯
+  }
+  return responses.value[date][key];
+};
+
+// 回答を切り替え（◯ → △ → × → ◯）
+const cycleResponse = (date, startTime, endTime) => {
+  const key = `${startTime}-${endTime}`;
+  const currentResponse = getResponse(date, startTime, endTime);
+  const nextResponse = {
+    '◯': '△',
+    '△': '×',
+    '×': '◯'
+  }[currentResponse];
+  
+  if (!responses.value[date]) {
+    responses.value[date] = {};
+  }
+  responses.value[date][key] = nextResponse;
+};
+
+// 送信可能かどうか
+const canSubmit = computed(() => {
+  if (!participantName.value.trim()) return false;
+  
+  // すべての時間枠に回答があるか確認
+  return Object.entries(meeting.value?.dates || {}).every(([date, dateData]) => {
+    if (!responses.value[date]) return false;
+    return dateData.timeSlots.every(slot => 
+      getResponse(date, slot.start, slot.end) !== null
+    );
+  });
+});
+
+// 回答の送信
+const handleSubmit = async () => {
+  if (!canSubmit.value) return;
+
+  try {
+    const participantId = await meetingStore.addParticipant(meetingId.value, {
+      name: participantName.value,
+      availability: responses.value,
+      comment: comment.value
+    });
+
+    // 送信完了後、完了画面に遷移
+    router.push({
+      name: 'complete',
+      params: { id: meetingId.value, participantId }
+    });
   } catch (err) {
     error.value = err.message;
   }
 };
 
-onMounted(async () => {
-  try {
-    if (!meeting.value) {
-      error.value = '会議が見つかりません';
-    }
-  } catch (err) {
-    error.value = err.message;
-  } finally {
-    loading.value = false;
+// 会議データの読み込み
+onMounted(() => {
+  const loadedMeeting = meetingStore.getMeeting(meetingId.value);
+  if (!loadedMeeting) {
+    error.value = '指定された会議が見つかりません。URLを確認してください。';
+    return;
   }
+  meeting.value = loadedMeeting;
 });
 </script>
+
+<style scoped>
+.select-none {
+  user-select: none;
+  -webkit-user-select: none;
+}
+</style>
