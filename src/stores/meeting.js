@@ -1,8 +1,22 @@
 import { defineStore } from 'pinia';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { Storage } from '../utils/storage';
+import { db } from '../firebase/config';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  onSnapshot,
+  query,
+  where,
+  Timestamp,
+  updateDoc,
+  arrayUnion
+} from 'firebase/firestore';
 
 const STORAGE_KEY = 'meeting_scheduler_data';
+const MEETINGS_COLLECTION = 'meetings';
 
 export const useMeetingStore = defineStore('meeting', () => {
   // 会議データ
@@ -17,6 +31,9 @@ export const useMeetingStore = defineStore('meeting', () => {
     createdAt: null,
     expiresAt: null
   });
+
+  // Firestoreのリスナー解除用関数
+  let unsubscribe = null;
 
   // データの変更を監視して自動保存
   watch(
@@ -49,12 +66,7 @@ export const useMeetingStore = defineStore('meeting', () => {
       }
       
       const end = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
-      
-      slots.push({
-        start,
-        end,
-        available: true
-      });
+      slots.push({ start, end });
     }
     
     return slots;
@@ -62,110 +74,126 @@ export const useMeetingStore = defineStore('meeting', () => {
 
   // 会議IDの生成
   const generateMeetingId = () => {
-    const timestamp = Date.now().toString(36);
-    const randomStr = Math.random().toString(36).substring(2, 8);
-    return `${timestamp}-${randomStr}`;
+    return Math.random().toString(36).substring(2, 15);
   };
 
   // 会議データの保存
-  const saveMeeting = (meetingData) => {
-    const id = generateMeetingId();
+  const saveMeeting = async (meetingData) => {
+    const id = meetingData.id || generateMeetingId();
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000)); // 60日後に期限切れ
-
-    const meeting = {
+    const meetingDoc = {
       ...meetingData,
       id,
-      createdAt: now.toISOString(),
-      expiresAt: expiresAt.toISOString(),
-      participants: []
+      createdAt: Timestamp.fromDate(now),
+      expiresAt: meetingData.expiresAt ? Timestamp.fromDate(new Date(meetingData.expiresAt)) : null,
+      updatedAt: Timestamp.fromDate(now),
+      participants: [] // 参加者配列を初期化
     };
 
-    meetings.value[id] = meeting;
-    return id;
+    try {
+      // Firestoreに保存
+      await setDoc(doc(db, MEETINGS_COLLECTION, id), meetingDoc);
+      
+      // ローカルステートも更新
+      meetings.value[id] = meetingDoc;
+      
+      return id;
+    } catch (error) {
+      console.error('Failed to save meeting:', error);
+      throw error;
+    }
   };
 
-  // 会議データの取得（期限切れチェック付き）
-  const getMeeting = (id) => {
-    const meeting = meetings.value[id];
-    if (!meeting) return null;
+  // 会議データの取得とリアルタイム監視
+  const getMeeting = async (id) => {
+    try {
+      // すでにリスナーがある場合は解除
+      if (unsubscribe) {
+        unsubscribe();
+      }
 
-    // 期限切れチェック
-    const now = new Date();
-    const expiresAt = new Date(meeting.expiresAt);
-    if (now > expiresAt) {
-      delete meetings.value[id];
+      // 会議データのリアルタイム監視を開始
+      unsubscribe = onSnapshot(doc(db, MEETINGS_COLLECTION, id), (doc) => {
+        if (doc.exists()) {
+          const meetingData = doc.data();
+          // 期限切れチェック
+          if (meetingData.expiresAt && meetingData.expiresAt.toDate() < new Date()) {
+            return null;
+          }
+          meetings.value[id] = meetingData;
+          return meetingData;
+        }
+        return null;
+      });
+
+      // 初回データ取得
+      const docSnap = await getDoc(doc(db, MEETINGS_COLLECTION, id));
+      if (docSnap.exists()) {
+        const meetingData = docSnap.data();
+        if (meetingData.expiresAt && meetingData.expiresAt.toDate() < new Date()) {
+          return null;
+        }
+        meetings.value[id] = meetingData;
+        return meetingData;
+      }
       return null;
+    } catch (error) {
+      console.error('Failed to get meeting:', error);
+      throw error;
     }
-
-    return meeting;
-  };
-
-  // 会議の参加登録用URLを生成
-  const generateJoinUrl = (meetingId) => {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/join/${meetingId}`;
-  };
-
-  // 日付ごとの時間枠を更新
-  const updateDateTimeSlots = (date, timeSlots) => {
-    if (!currentMeeting.value.dates[date]) {
-      currentMeeting.value.dates[date] = { timeSlots: [] };
-    }
-    currentMeeting.value.dates[date].timeSlots = timeSlots;
   };
 
   // 参加者の追加
-  const addParticipant = (meetingId, participantData) => {
-    const meeting = getMeeting(meetingId);
-    if (!meeting) {
-      throw new Error('会議が見つかりません');
-    }
+  const addParticipant = async (meetingId, participantData) => {
+    try {
+      const participantId = Math.random().toString(36).substring(2, 15);
+      const participant = {
+        id: participantId,
+        name: participantData.name,
+        availability: participantData.availability || {},
+        createdAt: Timestamp.fromDate(new Date())
+      };
 
-    // 参加者名の重複チェック
-    const isDuplicate = meeting.participants.some(
-      participant => participant.name === participantData.name
-    );
-    if (isDuplicate) {
-      throw new Error('この名前はすでに使用されています');
-    }
+      // 会議ドキュメントの参加者配列を更新
+      const meetingRef = doc(db, MEETINGS_COLLECTION, meetingId);
+      await updateDoc(meetingRef, {
+        participants: arrayUnion(participant)
+      });
 
-    const participantId = Date.now().toString(36);
-    const newParticipant = {
-      id: participantId,
-      name: participantData.name,
-      availability: participantData.availability || {},
-      comment: participantData.comment || '',
-      createdAt: new Date().toISOString()
-    };
-
-    meeting.participants.push(newParticipant);
-    return participantId;
-  };
-
-  // 期限切れの会議を削除
-  const cleanExpiredMeetings = () => {
-    const now = new Date();
-    Object.entries(meetings.value).forEach(([id, meeting]) => {
-      const expiresAt = new Date(meeting.expiresAt);
-      if (now > expiresAt) {
-        delete meetings.value[id];
+      // ローカルステートも更新
+      if (!meetings.value[meetingId].participants) {
+        meetings.value[meetingId].participants = [];
       }
-    });
+      meetings.value[meetingId].participants.push(participant);
+
+      return participantId;
+    } catch (error) {
+      console.error('Failed to add participant:', error);
+      throw error;
+    }
   };
 
-  // 定期的に期限切れの会議を削除
-  setInterval(cleanExpiredMeetings, 60 * 60 * 1000); // 1時間ごと
+  // コンポーネントのアンマウント時にリスナーを解除
+  onUnmounted(() => {
+    if (unsubscribe) {
+      unsubscribe();
+    }
+  });
 
   return {
     meetings,
     currentMeeting,
+    generateTimeSlots,
+    generateMeetingId,
     saveMeeting,
     getMeeting,
-    generateJoinUrl,
     addParticipant,
-    cleanExpiredMeetings,
-    generateTimeSlots,
-    updateDateTimeSlots
+    generateJoinUrl: (meetingId) => `${window.location.origin}/join/${meetingId}`,
+    updateDateTimeSlots: (date, timeSlots) => {
+      if (!currentMeeting.value.dates[date]) {
+        currentMeeting.value.dates[date] = {};
+      }
+      currentMeeting.value.dates[date].timeSlots = timeSlots;
+    }
   };
 });

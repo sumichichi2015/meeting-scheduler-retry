@@ -59,8 +59,8 @@ import { ref, computed } from 'vue';
 
 const props = defineProps({
   modelValue: {
-    type: Array,
-    default: () => []
+    type: Object,
+    default: () => ({})
   },
   maxSelections: {
     type: Number,
@@ -71,7 +71,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue']);
 
 const currentDate = ref(new Date());
-const selectedDates = ref(props.modelValue.map(dateStr => new Date(dateStr)));
+const selectedDates = computed(() => Object.keys(props.modelValue).map(dateStr => new Date(dateStr)));
 
 // ドラッグ選択の状態管理
 const isDragging = ref(false);
@@ -100,16 +100,19 @@ const endDragSelection = () => {
   const selectedRange = calendarDays.value
     .filter(({ date }) => isInDragRange(date) && !isDateDisabled(date))
     .map(({ date }) => date);
-
-  // 選択された日付を更新
-  selectedDates.value = selectedRange;
   
-  // v-modelを更新
-  emit('update:modelValue', selectedDates.value.map(date => 
-    date.toISOString().split('T')[0]
-  ));
-
-  // ドラッグ状態をリセット
+  // 選択状態を更新
+  const newSelection = { ...props.modelValue };
+  selectedRange.forEach(date => {
+    const dateStr = date.toISOString().split('T')[0];
+    if (newSelection[dateStr]) {
+      delete newSelection[dateStr];
+    } else if (Object.keys(newSelection).length < props.maxSelections) {
+      newSelection[dateStr] = true;
+    }
+  });
+  
+  emit('update:modelValue', newSelection);
   isDragging.value = false;
   dragStartDate.value = null;
   dragEndDate.value = null;
@@ -122,9 +125,6 @@ const isInDragRange = (date) => {
   const start = new Date(Math.min(dragStartDate.value, dragEndDate.value));
   const end = new Date(Math.max(dragStartDate.value, dragEndDate.value));
   
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-  
   return date >= start && date <= end;
 };
 
@@ -134,24 +134,15 @@ const currentMonth = computed(() => currentDate.value.getMonth());
 
 // カレンダーの日付を生成
 const calendarDays = computed(() => {
-  const year = currentYear.value;
-  const month = currentMonth.value;
-  
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  
-  // 先月の日数を取得
-  const prevMonthDays = firstDay.getDay();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
-  
-  // 来月の日数を取得
-  const nextMonthDays = 6 - lastDay.getDay();
-  
   const days = [];
+  const firstDay = new Date(currentYear.value, currentMonth.value, 1);
+  const lastDay = new Date(currentYear.value, currentMonth.value + 1, 0);
   
-  // 先月の日付を追加
-  for (let i = prevMonthDays - 1; i >= 0; i--) {
-    const date = new Date(year, month - 1, daysInPrevMonth - i);
+  // 前月の日付を追加
+  const firstDayOfWeek = firstDay.getDay();
+  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const date = new Date(firstDay);
+    date.setDate(date.getDate() - i - 1);
     days.push({
       date,
       isCurrentMonth: false,
@@ -160,20 +151,21 @@ const calendarDays = computed(() => {
     });
   }
   
-  // 今月の日付を追加
-  for (let i = 1; i <= lastDay.getDate(); i++) {
-    const date = new Date(year, month, i);
+  // 当月の日付を追加
+  for (let date = new Date(firstDay); date <= lastDay; date.setDate(date.getDate() + 1)) {
     days.push({
-      date,
+      date: new Date(date),
       isCurrentMonth: true,
       isSelected: isDateSelected(date),
       isDisabled: isDateDisabled(date)
     });
   }
   
-  // 来月の日付を追加
-  for (let i = 1; i <= nextMonthDays; i++) {
-    const date = new Date(year, month + 1, i);
+  // 翌月の日付を追加
+  const remainingDays = 42 - days.length;
+  for (let i = 1; i <= remainingDays; i++) {
+    const date = new Date(lastDay);
+    date.setDate(date.getDate() + i);
     days.push({
       date,
       isCurrentMonth: false,
@@ -187,9 +179,8 @@ const calendarDays = computed(() => {
 
 // 日付が選択されているかどうか
 const isDateSelected = (date) => {
-  return selectedDates.value.some(selectedDate => 
-    isSameDay(selectedDate, date)
-  );
+  const dateStr = date.toISOString().split('T')[0];
+  return !!props.modelValue[dateStr];
 };
 
 // 日付が無効かどうか
@@ -208,19 +199,15 @@ const isSameDay = (date1, date2) => {
 
 // 前月へ移動
 const previousMonth = () => {
-  currentDate.value = new Date(
-    currentDate.value.getFullYear(),
-    currentDate.value.getMonth() - 1,
-    1
-  );
+  const newDate = new Date(currentDate.value);
+  newDate.setMonth(newDate.getMonth() - 1);
+  currentDate.value = newDate;
 };
 
 // 翌月へ移動
 const nextMonth = () => {
-  currentDate.value = new Date(
-    currentDate.value.getFullYear(),
-    currentDate.value.getMonth() + 1,
-    1
-  );
+  const newDate = new Date(currentDate.value);
+  newDate.setMonth(newDate.getMonth() + 1);
+  currentDate.value = newDate;
 };
 </script>
