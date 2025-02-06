@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Meeting Scheduler</title>
+  <script>
+    // GitHub Pages用のSPA対応
+    const segment = 1;
+    const l = window.location;
+    const repo = l.pathname.split('/')[1];
+    l.replace(
+      `${l.protocol}//${l.hostname}` +
+      (l.port ? `:${l.port}` : '') +
+      `/${repo}/?p=/` +
+      l.pathname.slice(1).split('/').slice(segment).join('/') +
+      (l.search ? `&q=${l.search.slice(1)}` : '') +
+      l.hash
+    );
+  </script>
+</head>
+<body>
+  <h1>Redirecting...</h1>
+</body>
+</html>
