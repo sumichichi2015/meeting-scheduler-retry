@@ -202,10 +202,31 @@ export const useMeetingStore = defineStore('meeting', () => {
     addParticipant,
     generateJoinUrl: (meetingId) => `${window.location.origin}/join/${meetingId}`,
     updateDateTimeSlots: (date, timeSlots) => {
+      console.log('updateDateTimeSlots 呼び出し:', { date, timeSlots });
+      
+      // 入力バリデーション
+      if (!date || !timeSlots) {
+        console.error('日付または時間枠が不正です', { date, timeSlots });
+        return;
+      }
+
+      // currentMeeting が初期化されていない場合は初期化
+      if (!currentMeeting.value.dates) {
+        console.warn('currentMeeting.dates が初期化されていません。初期化します。');
+        currentMeeting.value.dates = {};
+      }
+
+      // 日付のエントリが存在しない場合は作成
       if (!currentMeeting.value.dates[date]) {
+        console.log(`日付 ${date} のエントリを作成します`);
         currentMeeting.value.dates[date] = {};
       }
+
+      // 時間枠を更新
       currentMeeting.value.dates[date].timeSlots = timeSlots;
+      
+      // デバッグ: 更新後の状態を確認
+      console.log('更新後の時間枠:', currentMeeting.value.dates[date].timeSlots);
     },
     setOrganizer: (name) => {
       currentMeeting.value.organizer = name;

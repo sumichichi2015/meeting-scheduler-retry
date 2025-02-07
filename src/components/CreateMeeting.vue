@@ -1,174 +1,114 @@
 <template>
   <div class="max-w-4xl mx-auto p-6">
-    <h1 class="text-2xl font-bold mb-6">会議の作成</h1>
+    <h1 class="text-2xl font-bold mb-8">会議日時調整ツール</h1>
 
-    <!-- 基本情報入力 -->
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3">基本情報</h2>
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">主催者名</label>
-          <input
-            type="text"
-            v-model="meetingStore.currentMeeting.organizer"
-            class="w-full p-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="例：山田 太郎"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">会議名</label>
-          <input
-            type="text"
-            v-model="meetingStore.currentMeeting.meetingName"
-            class="w-full p-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="例：2025年度第1回プロジェクト会議"
-          />
+    <!-- 会議名と時間帯設定 -->
+    <div class="mb-8 space-y-4">
+      <div class="flex items-center gap-4">
+        <label class="block text-sm font-medium text-gray-700 w-24">会議名</label>
+        <input
+          type="text"
+          v-model="meetingStore.currentMeeting.title"
+          class="flex-1 p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="会議名を入力"
+        />
+      </div>
+      
+      <div class="flex items-center gap-4">
+        <label class="block text-sm font-medium text-gray-700 w-24">時間帯</label>
+        <div class="flex items-center gap-2">
+          <select
+            v-model="defaultTimeRange.start"
+            class="p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option v-for="time in generateTimeOptions()" :key="time" :value="time">
+              {{ time }}
+            </option>
+          </select>
+          <span class="text-gray-500">〜</span>
+          <select
+            v-model="defaultTimeRange.end"
+            class="p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option v-for="time in generateTimeOptions()" :key="time" :value="time">
+              {{ time }}
+            </option>
+          </select>
         </div>
       </div>
     </div>
 
     <!-- カレンダー -->
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3">日付の選択</h2>
-      <Calendar v-model="selectedDates" @update:modelValue="handleDateSelect" />
+    <div class="mb-8">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div v-for="monthOffset in [0, 1]" :key="monthOffset" class="calendar-container">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-medium">{{ getMonthTitle(monthOffset) }}</h3>
+            <button
+              v-if="monthOffset === 1"
+              @click="nextMonth"
+              class="p-2 text-gray-600 hover:text-gray-900 focus:outline-none"
+            >
+              &gt;
+            </button>
+          </div>
+          <Calendar 
+            v-model="selectedDates"
+            :month-offset="monthOffset"
+            @change-month="handleMonthChange(monthOffset, $event)"
+          />
+        </div>
+      </div>
     </div>
 
-    <!-- 時間枠選択 -->
-    <div v-if="hasSelectedDates" class="mb-6">
-      <h2 class="text-lg font-semibold mb-3">時間枠の選択</h2>
-      <div v-for="date in Object.keys(selectedDates)" :key="date" class="mb-6">
-        <h3 class="text-md font-medium mb-2">{{ formatDate(date) }}</h3>
-        
-        <!-- 時間範囲選択 -->
-        <div class="mb-4">
-          <div class="flex items-center gap-4">
-            <div class="flex-1">
-              <label class="block text-sm font-medium text-gray-700 mb-1">開始時間</label>
-              <input
-                type="time"
-                v-model="timeRanges[date].start"
-                class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                step="1800"
-              />
-            </div>
-            <div class="flex-1">
-              <label class="block text-sm font-medium text-gray-700 mb-1">終了時間</label>
-              <input
-                type="time"
-                v-model="timeRanges[date].end"
-                class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                step="1800"
-              />
-            </div>
-            <div class="flex items-end">
-              <button
-                @click="generateTimeSlotsForDate(date)"
-                class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                時間枠を生成
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 時間枠一覧 -->
-        <div v-if="meetingStore.currentMeeting.dates[date]?.timeSlots.length" class="bg-white shadow-sm rounded-lg overflow-hidden">
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 p-4"
-            @mousedown.prevent="startDragSelection(date)"
-            @mousemove="updateDragSelection"
-            @mouseup="endDragSelection"
-            @mouseleave="endDragSelection"
-          >
-            <div
-              v-for="(slot, index) in meetingStore.currentMeeting.dates[date].timeSlots"
-              :key="`${date}-${slot.start}-${slot.end}`"
-              class="relative"
+    <!-- 選択された日時の一覧 -->
+    <div v-if="Object.keys(selectedDates).length > 0" class="mb-8">
+      <h3 class="text-lg font-medium mb-4">選択された日時</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div 
+          v-for="date in Object.keys(selectedDates).sort()" 
+          :key="date" 
+          class="bg-white p-4 rounded-lg shadow-sm"
+        >
+          <div class="font-medium mb-2">{{ formatDate(date) }}</div>
+          <div class="space-y-1">
+            <button
+              v-for="timeSlot in generateTimeSlots(date)"
+              :key="`${date}-${timeSlot.start}-${timeSlot.end}`"
+              @click="toggleTimeSlot(date, timeSlot)"
+              :class="[
+                'w-full py-2 px-3 rounded text-sm transition-colors duration-150 text-left',
+                isTimeSlotSelected(date, timeSlot)
+                  ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                  : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+              ]"
             >
-              <button
-                :class="[
-                  'w-full py-2 px-4 text-sm rounded-md border transition-colors duration-150',
-                  slot.available
-                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
-                    : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100',
-                  isDragging && isInDragRange(date, index) && 'ring-2 ring-indigo-500'
-                ]"
-                @mouseenter="updateHoveredSlot(date, index)"
-                @click="toggleTimeSlot(date, index)"
-              >
-                {{ slot.start }} 〜 {{ slot.end }}
-              </button>
-            </div>
+              {{ timeSlot.start }} 〜 {{ timeSlot.end }}
+            </button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- コメント欄 -->
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3">コメント</h2>
+    <!-- コメント入力 -->
+    <div class="mb-8">
+      <label class="block text-sm font-medium text-gray-700 mb-2">コメント</label>
       <textarea
-        v-model="meetingStore.currentMeeting.comment"
-        class="w-full p-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        rows="3"
-        placeholder="会議の詳細や注意事項があれば入力してください"
+        v-model="meetingStore.currentMeeting.description"
+        rows="4"
+        class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        placeholder="会議に関する補足情報を入力してください"
       ></textarea>
     </div>
 
-    <!-- 有効期限設定 -->
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3">回答期限</h2>
-      <input
-        type="date"
-        v-model="expiryDate"
-        class="w-full p-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        :min="minExpiryDate"
-      >
-    </div>
-
-    <!-- 操作ボタン -->
-    <div class="flex justify-end gap-4">
+    <!-- URL発行ボタン -->
+    <div class="flex justify-center">
       <button
-        class="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-        @click="resetForm"
+        @click="createMeeting"
+        class="px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       >
-        キャンセル
+        URLを発行して開く
       </button>
-      <button
-        @click="handleCreateAndOpenMeeting"
-        class="px-4 py-2 bg-indigo-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
-        :disabled="!canProceed || isCreating"
-      >
-        {{ isCreating ? '作成中...' : 'URLを発行して開く' }}
-      </button>
-    </div>
-
-    <!-- 参加者登録用URL -->
-    <div v-if="joinUrl" class="mt-6">
-      <p class="text-lg font-semibold mb-3">参加者登録用URL:</p>
-      <div class="flex items-center gap-2">
-        <a
-          :href="joinUrl"
-          target="_blank"
-          class="flex-1 p-2 bg-white border border-gray-300 rounded-md shadow-sm text-indigo-600 hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 truncate"
-        >
-          {{ joinUrl }}
-        </a>
-        <div class="flex gap-2">
-          <button
-            @click="copyUrl"
-            class="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 flex items-center gap-2"
-          >
-            <span>コピー</span>
-            <span v-if="showCopyMessage" class="text-green-600">✓</span>
-          </button>
-          <button
-            @click="shareByEmail"
-            class="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            メールで共有
-          </button>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -180,187 +120,102 @@ import Calendar from './Calendar.vue';
 
 const meetingStore = useMeetingStore();
 const selectedDates = ref({});
-const timeRanges = ref({});
-const joinUrl = ref('');
-const showCopyMessage = ref(false);
-const isCreating = ref(false);
-const expiryDate = ref('');
-
-// 回答期限の最小値を今日に設定
-const minExpiryDate = computed(() => {
-  const today = new Date();
-  return today.toISOString().split('T')[0];
+const defaultTimeRange = ref({
+  start: '09:00',
+  end: '17:00'
 });
 
-// 日付が選択されているかどうか
-const hasSelectedDates = computed(() => Object.keys(selectedDates.value).length > 0);
-
-// 会議作成が可能かどうか
-const canProceed = computed(() => {
-  if (!hasSelectedDates.value) return false;
-  if (!meetingStore.currentMeeting.organizer.trim()) return false;
-  if (!meetingStore.currentMeeting.meetingName.trim()) return false;
-  
-  // 選択された日付すべてに時間枠が設定されているか確認
-  return Object.keys(selectedDates.value).every(date => 
-    meetingStore.currentMeeting.dates[date]?.timeSlots?.length > 0
-  );
-});
-
-// 日付のフォーマット
-const formatDate = (dateStr) => {
-  const date = new Date(dateStr);
-  const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()];
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 (${dayOfWeek})`;
-};
-
-// 日付が選択された時の処理
-const handleDateSelect = (dates) => {
-  selectedDates.value = dates;
-  
-  // 選択された日付の時間枠を初期化
-  Object.keys(dates).forEach(date => {
-    if (!timeRanges.value[date]) {
-      timeRanges.value[date] = {
-        start: '09:00',
-        end: '17:00'
-      };
+// 30分間隔の時間オプションを生成（9:00から21:00まで）
+const generateTimeOptions = () => {
+  const times = [];
+  for (let hour = 9; hour <= 21; hour++) {
+    for (let minute of ['00', '30']) {
+      times.push(`${hour.toString().padStart(2, '0')}:${minute}`);
     }
-  });
+  }
+  return times;
 };
 
-// 指定された日付の時間枠を生成
-const generateTimeSlotsForDate = (date) => {
-  const slots = meetingStore.generateTimeSlots(
-    timeRanges.value[date].start,
-    timeRanges.value[date].end
-  ).map(slot => ({ ...slot, available: true }));
-  
-  meetingStore.updateDateTimeSlots(date, slots);
+const getMonthTitle = (offset) => {
+  const date = new Date();
+  date.setMonth(date.getMonth() + offset);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
 };
 
-// URLを生成して自動的に開く
-const handleCreateAndOpenMeeting = async () => {
-  if (!canProceed.value) return;
+const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  return `${date.getMonth() + 1}月${date.getDate()}日(${['日', '月', '火', '水', '木', '金', '土'][date.getDay()]})`;
+};
+
+const nextMonth = () => {
+  // カレンダーの月を進める処理
+};
+
+const createMeeting = async () => {
+  // 会議URLを生成して開く処理
+};
+
+// 30分間隔の時間スロットを生成
+const generateTimeSlots = (date) => {
+  const slots = [];
+  const range = timeRanges.value[date] || defaultTimeRange.value;
   
-  isCreating.value = true;
-  try {
-    const meetingData = {
-      ...meetingStore.currentMeeting,
-      expiresAt: expiryDate.value
+  // 開始時間と終了時間を分単位に変換
+  const getMinutes = (timeStr) => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+  
+  const startMinutes = getMinutes(range.start);
+  const endMinutes = getMinutes(range.end);
+  
+  // 30分間隔でスロットを生成
+  for (let minutes = startMinutes; minutes < endMinutes; minutes += 30) {
+    const start = `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`;
+    const end = `${Math.floor((minutes + 30) / 60).toString().padStart(2, '0')}:${((minutes + 30) % 60).toString().padStart(2, '0')}`;
+    
+    slots.push({ start, end });
+  }
+  
+  return slots;
+};
+
+// 時間スロットが選択されているかチェック
+const isTimeSlotSelected = (date, timeSlot) => {
+  const dateSlots = meetingStore.currentMeeting.dates[date]?.selectedTimeSlots || {};
+  return dateSlots[`${timeSlot.start}-${timeSlot.end}`] || false;
+};
+
+// 時間スロットの選択/解除
+const toggleTimeSlot = (date, timeSlot) => {
+  if (!meetingStore.currentMeeting.dates[date]) {
+    meetingStore.currentMeeting.dates[date] = {
+      selectedTimeSlots: {}
     };
-    
-    const meetingId = await meetingStore.saveMeeting(meetingData);
-    joinUrl.value = meetingStore.generateJoinUrl(meetingId);
-    
-    // 新しいタブでURLを開く
-    window.open(joinUrl.value, '_blank');
-  } catch (error) {
-    console.error('Failed to create meeting:', error);
-    alert('会議の作成に失敗しました。もう一度お試しください。');
-  } finally {
-    isCreating.value = false;
   }
-};
-
-// URLをメールで共有
-const shareByEmail = () => {
-  if (!joinUrl.value) return;
-  const subject = encodeURIComponent(`[会議調整] ${meetingStore.currentMeeting.meetingName}`);
-  const body = encodeURIComponent(`${meetingStore.currentMeeting.organizer}さんから会議の出欠確認が届いています。\n\n${joinUrl.value}`);
-  window.location.href = `mailto:?subject=${subject}&body=${body}`;
-};
-
-// URLをクリップボードにコピー
-const copyUrl = async () => {
-  if (!joinUrl.value) return;
-  await navigator.clipboard.writeText(joinUrl.value);
-  showCopyMessage.value = true;
-  setTimeout(() => {
-    showCopyMessage.value = false;
-  }, 2000);
-};
-
-// フォームをリセット
-const resetForm = () => {
-  selectedDates.value = {};
-  timeRanges.value = {};
-  joinUrl.value = '';
-  expiryDate.value = '';
-  meetingStore.currentMeeting = {
-    id: null,
-    dates: {},
-    comment: '',
-    participants: [],
-    organizer: '',
-    meetingName: '',
-    createdAt: null,
-    expiresAt: null
-  };
-};
-
-// ドラッグ選択の状態管理
-const isDragging = ref(false);
-const dragStartInfo = ref(null);
-const hoveredSlotInfo = ref(null);
-
-// ドラッグ選択の開始
-const startDragSelection = (date) => {
-  isDragging.value = true;
-  dragStartInfo.value = {
-    date,
-    index: null
-  };
-};
-
-// ホバー中のスロット情報を更新
-const updateHoveredSlot = (date, index) => {
-  hoveredSlotInfo.value = { date, index };
-};
-
-// ドラッグ中の選択を更新
-const updateDragSelection = () => {
-  if (!isDragging.value || !hoveredSlotInfo.value) return;
-};
-
-// ドラッグ選択の終了
-const endDragSelection = () => {
-  if (!isDragging.value || !dragStartInfo.value || !hoveredSlotInfo.value) {
-    isDragging.value = false;
-    dragStartInfo.value = null;
-    hoveredSlotInfo.value = null;
-    return;
-  }
-
-  const { date } = dragStartInfo.value;
-  if (date === hoveredSlotInfo.value.date) {
-    const timeSlots = meetingStore.currentMeeting.dates[date].timeSlots;
-    const startIndex = Math.min(dragStartInfo.value.index, hoveredSlotInfo.value.index);
-    const endIndex = Math.max(dragStartInfo.value.index, hoveredSlotInfo.value.index);
-
-    for (let i = startIndex; i <= endIndex; i++) {
-      timeSlots[i].available = !timeSlots[i].available;
-    }
-  }
-
-  isDragging.value = false;
-  dragStartInfo.value = null;
-  hoveredSlotInfo.value = null;
-};
-
-// スロットが選択範囲内かどうかを判定
-const isInDragRange = (date, index) => {
-  if (!isDragging.value || !dragStartInfo.value || !hoveredSlotInfo.value) return false;
-  if (date !== dragStartInfo.value.date || date !== hoveredSlotInfo.value.date) return false;
   
-  const startIndex = Math.min(dragStartInfo.value.index, hoveredSlotInfo.value.index);
-  const endIndex = Math.max(dragStartInfo.value.index, hoveredSlotInfo.value.index);
-  return index >= startIndex && index <= endIndex;
+  const slotKey = `${timeSlot.start}-${timeSlot.end}`;
+  const dateSlots = meetingStore.currentMeeting.dates[date].selectedTimeSlots;
+  
+  if (dateSlots[slotKey]) {
+    delete dateSlots[slotKey];
+  } else {
+    dateSlots[slotKey] = true;
+  }
 };
 
-// 時間枠のクリックイベント
-const toggleTimeSlot = (date, index) => {
-  const timeSlots = meetingStore.currentMeeting.dates[date].timeSlots;
-  timeSlots[index].available = !timeSlots[index].available;
+// 時間範囲の状態管理
+const timeRanges = ref({});
+
+// 月の変更を処理するメソッド
+const handleMonthChange = (calendarIndex, delta) => {
+  // 必要に応じて月の変更に関する追加のロジックを実装
+  console.log(`Calendar ${calendarIndex} changed by ${delta} months`);
 };
 </script>
+
+<style scoped>
+.calendar-container {
+  @apply bg-white p-4 rounded-lg shadow-sm;
+}
+</style>
