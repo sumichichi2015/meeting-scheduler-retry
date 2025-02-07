@@ -6,6 +6,14 @@
       <p class="text-red-600">{{ error }}</p>
     </div>
 
+    <div v-if="meeting" class="mb-6">
+      <h2 class="text-lg font-semibold mb-3">会議の基本情報</h2>
+      <div class="bg-gray-50 p-4 rounded-lg space-y-4">
+        <p>会議名: {{ meeting.meetingName }}</p>
+        <p>主催者: {{ meeting.organizer }}</p>
+      </div>
+    </div>
+
     <div class="mb-6">
       <h2 class="text-lg font-semibold mb-3">参加者情報</h2>
       <div class="space-y-4">
@@ -28,11 +36,11 @@
         <div v-for="(dateData, date) in meeting.dates" :key="date">
           <h3 class="font-medium text-gray-900 mb-2">{{ formatDate(date) }}</h3>
           <div class="bg-white shadow-sm rounded-lg overflow-hidden">
-            <div class="divide-y divide-gray-200">
+            <div class="flex flex-col">
               <div
                 v-for="(slot, index) in dateData.timeSlots"
                 :key="`${date}-${slot.start}`"
-                class="hover:bg-gray-50 relative cursor-pointer select-none"
+                class="hover:bg-gray-50 relative cursor-pointer select-none border-b last:border-b-0"
                 @mousedown="startDragSelection(date, index)"
                 @mousemove="updateDragSelection(date, index)"
                 @mouseup="endDragSelection"
@@ -43,16 +51,27 @@
                   :class="{'bg-indigo-50': isInDragRange(date, index)}"
                 >
                   <div class="flex-1">
-                    <div class="text-sm text-gray-900">
+                    <div class="text-sm font-medium text-gray-900">
                       {{ slot.start }} 〜 {{ slot.end }}
                     </div>
-                    <div class="text-xs text-gray-500">
-                      {{ getParticipantCount(date, slot) }}
+                    <div class="text-xs text-gray-500 mt-1">
+                      <span class="inline-flex items-center mr-3">
+                        <span class="w-2 h-2 rounded-full bg-green-400 mr-1"></span>
+                        ○: {{ getParticipantCountByResponse(date, slot, '○') }}名
+                      </span>
+                      <span class="inline-flex items-center mr-3">
+                        <span class="w-2 h-2 rounded-full bg-yellow-400 mr-1"></span>
+                        △: {{ getParticipantCountByResponse(date, slot, '△') }}名
+                      </span>
+                      <span class="inline-flex items-center">
+                        <span class="w-2 h-2 rounded-full bg-red-400 mr-1"></span>
+                        ×: {{ getParticipantCountByResponse(date, slot, '×') }}名
+                      </span>
                     </div>
                   </div>
                   <div class="flex items-center">
                     <div
-                      class="w-8 h-8 rounded-full flex items-center justify-center border transition-colors duration-150"
+                      class="w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors duration-150 text-lg font-medium"
                       :class="responseClasses(getResponse(date, slot))"
                     >
                       {{ getResponse(date, slot) }}
@@ -270,13 +289,13 @@ const isInDragRange = (date, index) => {
 const responseClasses = (response) => {
   switch (response) {
     case '○':
-      return 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100';
+      return 'border-green-500 text-green-600 bg-green-50 hover:bg-green-100';
     case '△':
-      return 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100';
+      return 'border-yellow-500 text-yellow-600 bg-yellow-50 hover:bg-yellow-100';
     case '×':
-      return 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
+      return 'border-red-500 text-red-600 bg-red-50 hover:bg-red-100';
     default:
-      return 'border-gray-300';
+      return 'border-gray-300 text-gray-400';
   }
 };
 

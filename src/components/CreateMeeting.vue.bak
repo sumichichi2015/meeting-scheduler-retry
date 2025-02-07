@@ -2,31 +2,6 @@
   <div class="max-w-4xl mx-auto p-6">
     <h1 class="text-2xl font-bold mb-6">会議の作成</h1>
 
-    <!-- 基本情報入力 -->
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3">基本情報</h2>
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">主催者名</label>
-          <input
-            type="text"
-            v-model="meetingStore.currentMeeting.organizer"
-            class="w-full p-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="例：山田 太郎"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">会議名</label>
-          <input
-            type="text"
-            v-model="meetingStore.currentMeeting.meetingName"
-            class="w-full p-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="例：2025年度第1回プロジェクト会議"
-          />
-        </div>
-      </div>
-    </div>
-
     <!-- カレンダー -->
     <div class="mb-6">
       <h2 class="text-lg font-semibold mb-3">日付の選択</h2>
@@ -73,7 +48,7 @@
 
         <!-- 時間枠一覧 -->
         <div v-if="meetingStore.currentMeeting.dates[date]?.timeSlots.length" class="bg-white shadow-sm rounded-lg overflow-hidden">
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 p-4"
+          <div class="grid grid-cols-4 gap-2 p-4"
             @mousedown.prevent="startDragSelection(date)"
             @mousemove="updateDragSelection"
             @mouseup="endDragSelection"
@@ -93,7 +68,6 @@
                   isDragging && isInDragRange(date, index) && 'ring-2 ring-indigo-500'
                 ]"
                 @mouseenter="updateHoveredSlot(date, index)"
-                @click="toggleTimeSlot(date, index)"
               >
                 {{ slot.start }} 〜 {{ slot.end }}
               </button>
@@ -198,8 +172,6 @@ const hasSelectedDates = computed(() => Object.keys(selectedDates.value).length 
 // 会議作成が可能かどうか
 const canProceed = computed(() => {
   if (!hasSelectedDates.value) return false;
-  if (!meetingStore.currentMeeting.organizer.trim()) return false;
-  if (!meetingStore.currentMeeting.meetingName.trim()) return false;
   
   // 選択された日付すべてに時間枠が設定されているか確認
   return Object.keys(selectedDates.value).every(date => 
@@ -231,32 +203,47 @@ const handleDateSelect = (dates) => {
 
 // 指定された日付の時間枠を生成
 const generateTimeSlotsForDate = (date) => {
-  const slots = meetingStore.generateTimeSlots(
-    timeRanges.value[date].start,
-    timeRanges.value[date].end
-  ).map(slot => ({ ...slot, available: true }));
+  const range = timeRanges.value[date];
+  if (!range) return;
   
-  meetingStore.updateDateTimeSlots(date, slots);
+  const slots = meetingStore.generateTimeSlots(range.start, range.end);
+  meetingStore.currentMeeting.dates[date] = { timeSlots: slots };
 };
 
 // URLを生成して自動的に開く
 const handleCreateAndOpenMeeting = async () => {
-  if (!canProceed.value) return;
-  
-  isCreating.value = true;
   try {
+    isCreating.value = true;
+
+    // 選択された日付と時間枠のデータを整形
+    const dates = {};
+    Object.keys(selectedDates.value).forEach(date => {
+      if (meetingStore.currentMeeting.dates[date]) {
+        dates[date] = meetingStore.currentMeeting.dates[date];
+      }
+    });
+
+    // 会議データを保存
     const meetingData = {
-      ...meetingStore.currentMeeting,
-      expiresAt: expiryDate.value
+      dates,
+      comment: meetingStore.currentMeeting.comment,
+      expiresAt: expiryDate.value ? new Date(expiryDate.value).toISOString() : null
     };
-    
+
     const meetingId = await meetingStore.saveMeeting(meetingData);
     joinUrl.value = meetingStore.generateJoinUrl(meetingId);
     
-    // 新しいタブでURLを開く
+    // URLを自動的にクリップボードにコピー
+    await navigator.clipboard.writeText(joinUrl.value);
+    showCopyMessage.value = true;
+    setTimeout(() => {
+      showCopyMessage.value = false;
+    }, 2000);
+    
+    // 新しいタブで参加者画面を開く
     window.open(joinUrl.value, '_blank');
   } catch (error) {
-    console.error('Failed to create meeting:', error);
+    console.error('会議の作成に失敗しました:', error);
     alert('会議の作成に失敗しました。もう一度お試しください。');
   } finally {
     isCreating.value = false;
@@ -265,15 +252,13 @@ const handleCreateAndOpenMeeting = async () => {
 
 // URLをメールで共有
 const shareByEmail = () => {
-  if (!joinUrl.value) return;
-  const subject = encodeURIComponent(`[会議調整] ${meetingStore.currentMeeting.meetingName}`);
-  const body = encodeURIComponent(`${meetingStore.currentMeeting.organizer}さんから会議の出欠確認が届いています。\n\n${joinUrl.value}`);
+  const subject = encodeURIComponent('会議の日程調整');
+  const body = encodeURIComponent(`以下のURLから会議の日程調整にご協力ください：\n\n${joinUrl.value}`);
   window.location.href = `mailto:?subject=${subject}&body=${body}`;
 };
 
 // URLをクリップボードにコピー
 const copyUrl = async () => {
-  if (!joinUrl.value) return;
   await navigator.clipboard.writeText(joinUrl.value);
   showCopyMessage.value = true;
   setTimeout(() => {
@@ -286,17 +271,10 @@ const resetForm = () => {
   selectedDates.value = {};
   timeRanges.value = {};
   joinUrl.value = '';
+  showCopyMessage.value = false;
+  meetingStore.currentMeeting.dates = {};
+  meetingStore.currentMeeting.comment = '';
   expiryDate.value = '';
-  meetingStore.currentMeeting = {
-    id: null,
-    dates: {},
-    comment: '',
-    participants: [],
-    organizer: '',
-    meetingName: '',
-    createdAt: null,
-    expiresAt: null
-  };
 };
 
 // ドラッグ選択の状態管理
@@ -309,7 +287,7 @@ const startDragSelection = (date) => {
   isDragging.value = true;
   dragStartInfo.value = {
     date,
-    index: null
+    index: hoveredSlotInfo.value?.index || 0
   };
 };
 
@@ -320,47 +298,36 @@ const updateHoveredSlot = (date, index) => {
 
 // ドラッグ中の選択を更新
 const updateDragSelection = () => {
-  if (!isDragging.value || !hoveredSlotInfo.value) return;
+  if (!isDragging.value) return;
 };
 
 // ドラッグ選択の終了
 const endDragSelection = () => {
-  if (!isDragging.value || !dragStartInfo.value || !hoveredSlotInfo.value) {
-    isDragging.value = false;
-    dragStartInfo.value = null;
-    hoveredSlotInfo.value = null;
-    return;
+  if (!isDragging.value || !dragStartInfo.value || !hoveredSlotInfo.value) return;
+
+  const date = dragStartInfo.value.date;
+  const startIndex = Math.min(dragStartInfo.value.index, hoveredSlotInfo.value.index);
+  const endIndex = Math.max(dragStartInfo.value.index, hoveredSlotInfo.value.index);
+
+  // 選択範囲内のスロットの状態を切り替え
+  const currentState = meetingStore.currentMeeting.dates[date].timeSlots[startIndex].available;
+  for (let i = startIndex; i <= endIndex; i++) {
+    meetingStore.currentMeeting.dates[date].timeSlots[i].available = !currentState;
   }
 
-  const { date } = dragStartInfo.value;
-  if (date === hoveredSlotInfo.value.date) {
-    const timeSlots = meetingStore.currentMeeting.dates[date].timeSlots;
-    const startIndex = Math.min(dragStartInfo.value.index, hoveredSlotInfo.value.index);
-    const endIndex = Math.max(dragStartInfo.value.index, hoveredSlotInfo.value.index);
-
-    for (let i = startIndex; i <= endIndex; i++) {
-      timeSlots[i].available = !timeSlots[i].available;
-    }
-  }
-
+  // 状態をリセット
   isDragging.value = false;
   dragStartInfo.value = null;
-  hoveredSlotInfo.value = null;
 };
 
 // スロットが選択範囲内かどうかを判定
 const isInDragRange = (date, index) => {
   if (!isDragging.value || !dragStartInfo.value || !hoveredSlotInfo.value) return false;
-  if (date !== dragStartInfo.value.date || date !== hoveredSlotInfo.value.date) return false;
-  
+  if (date !== dragStartInfo.value.date) return false;
+
   const startIndex = Math.min(dragStartInfo.value.index, hoveredSlotInfo.value.index);
   const endIndex = Math.max(dragStartInfo.value.index, hoveredSlotInfo.value.index);
+  
   return index >= startIndex && index <= endIndex;
-};
-
-// 時間枠のクリックイベント
-const toggleTimeSlot = (date, index) => {
-  const timeSlots = meetingStore.currentMeeting.dates[date].timeSlots;
-  timeSlots[index].available = !timeSlots[index].available;
 };
 </script>

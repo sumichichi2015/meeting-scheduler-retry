@@ -1,55 +1,29 @@
 <template>
-  <div class="calendar">
-    <div class="flex items-center justify-between mb-4">
-      <button
-        @click="previousMonth"
-        class="p-2 hover:bg-gray-100 rounded-full"
-      >
-        ←
-      </button>
-      <h3 class="text-lg font-semibold">
-        {{ currentYear }}年{{ currentMonth + 1 }}月
-      </h3>
-      <button
-        @click="nextMonth"
-        class="p-2 hover:bg-gray-100 rounded-full"
-      >
-        →
-      </button>
-    </div>
-
-    <div class="grid grid-cols-7 gap-1">
-      <!-- 曜日のヘッダー -->
-      <div
-        v-for="day in ['日', '月', '火', '水', '木', '金', '土']"
-        :key="day"
-        class="text-center py-2 text-sm font-medium"
-        :class="{ 'text-red-500': day === '日', 'text-blue-500': day === '土' }"
-      >
-        {{ day }}
+  <div class="calendar-wrapper">
+    <div class="calendars-container">
+      <div v-for="offset in 2" :key="offset" class="calendar">
+        <div class="calendar-header">
+          <button @click="changeMonth(-1)" v-if="offset === 0">&lt;</button>
+          <h3>{{ getMonthTitle(offset) }}</h3>
+          <button @click="changeMonth(1)" v-if="offset === 1">&gt;</button>
+        </div>
+        <div class="calendar-grid">
+          <div v-for="day in weekDays" :key="day" class="weekday">{{ day }}</div>
+          <div
+            v-for="date in getDatesForMonth(offset)"
+            :key="date.date"
+            class="date"
+            :class="{
+              'other-month': !date.currentMonth,
+              'selected': isSelected(date.date),
+              'today': isToday(date.date)
+            }"
+            @click="toggleDate(date)"
+          >
+            {{ new Date(date.date).getDate() }}
+          </div>
+        </div>
       </div>
-
-      <!-- 日付のグリッド -->
-      <button
-        v-for="{ date, isCurrentMonth, isSelected, isDisabled } in calendarDays"
-        :key="date.toISOString()"
-        @mousedown="startDragSelection(date)"
-        @mouseover="updateDragSelection(date)"
-        @mouseup="endDragSelection"
-        :disabled="isDisabled"
-        class="aspect-square flex items-center justify-center p-2 rounded-lg text-sm relative"
-        :class="{
-          'text-gray-400': !isCurrentMonth,
-          'bg-indigo-100 text-indigo-700': isSelected,
-          'hover:bg-gray-100': !isSelected && !isDisabled && isCurrentMonth,
-          'cursor-not-allowed opacity-50': isDisabled,
-          'text-red-500': date.getDay() === 0 && isCurrentMonth,
-          'text-blue-500': date.getDay() === 6 && isCurrentMonth,
-          'ring-2 ring-indigo-500 ring-offset-2': isDragging && isInDragRange(date)
-        }"
-      >
-        {{ date.getDate() }}
-      </button>
     </div>
   </div>
 </template>
@@ -57,157 +31,173 @@
 <script setup>
 import { ref, computed } from 'vue';
 
-const props = defineProps({
-  modelValue: {
-    type: Object,
-    default: () => ({})
-  },
-  maxSelections: {
-    type: Number,
-    default: 7
-  }
-});
+const emit = defineEmits(['dates-selected']);
 
-const emit = defineEmits(['update:modelValue']);
+const currentMonth = ref(new Date());
+const selectedDates = ref([]);
+const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
 
-const currentDate = ref(new Date());
-const selectedDates = computed(() => Object.keys(props.modelValue).map(dateStr => new Date(dateStr)));
-
-// ドラッグ選択の状態管理
-const isDragging = ref(false);
-const dragStartDate = ref(null);
-const dragEndDate = ref(null);
-
-// ドラッグ選択の開始
-const startDragSelection = (date) => {
-  if (isDateDisabled(date)) return;
-  isDragging.value = true;
-  dragStartDate.value = date;
-  dragEndDate.value = date;
+const getMonthTitle = (offset) => {
+  const date = new Date(currentMonth.value);
+  date.setMonth(date.getMonth() + offset);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
 };
 
-// ドラッグ中の選択更新
-const updateDragSelection = (date) => {
-  if (!isDragging.value || isDateDisabled(date)) return;
-  dragEndDate.value = date;
-};
-
-// ドラッグ選択の終了
-const endDragSelection = () => {
-  if (!isDragging.value) return;
+const getDatesForMonth = (offset) => {
+  const date = new Date(currentMonth.value);
+  date.setMonth(date.getMonth() + offset);
   
-  // 選択範囲内の日付を取得
-  const selectedRange = calendarDays.value
-    .filter(({ date }) => isInDragRange(date) && !isDateDisabled(date))
-    .map(({ date }) => date);
+  const month = date.getMonth();
+  const year = date.getFullYear();
   
-  // 選択状態を更新
-  const newSelection = { ...props.modelValue };
-  selectedRange.forEach(date => {
-    const dateStr = date.toISOString().split('T')[0];
-    if (newSelection[dateStr]) {
-      delete newSelection[dateStr];
-    } else if (Object.keys(newSelection).length < props.maxSelections) {
-      newSelection[dateStr] = true;
-    }
-  });
+  // 月の最初の日を取得
+  date.setDate(1);
+  const firstDay = date.getDay();
   
-  emit('update:modelValue', newSelection);
-  isDragging.value = false;
-  dragStartDate.value = null;
-  dragEndDate.value = null;
-};
-
-// 日付が選択範囲内かどうかを判定
-const isInDragRange = (date) => {
-  if (!isDragging.value || !dragStartDate.value || !dragEndDate.value) return false;
+  // 月の最後の日を取得
+  const lastDate = new Date(year, month + 1, 0).getDate();
   
-  const start = new Date(Math.min(dragStartDate.value, dragEndDate.value));
-  const end = new Date(Math.max(dragStartDate.value, dragEndDate.value));
+  // 前月の日数を取得
+  const prevMonthLastDate = new Date(year, month, 0).getDate();
   
-  return date >= start && date <= end;
-};
-
-// 現在の年と月
-const currentYear = computed(() => currentDate.value.getFullYear());
-const currentMonth = computed(() => currentDate.value.getMonth());
-
-// カレンダーの日付を生成
-const calendarDays = computed(() => {
-  const days = [];
-  const firstDay = new Date(currentYear.value, currentMonth.value, 1);
-  const lastDay = new Date(currentYear.value, currentMonth.value + 1, 0);
+  const dates = [];
   
   // 前月の日付を追加
-  const firstDayOfWeek = firstDay.getDay();
-  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
-    const date = new Date(firstDay);
-    date.setDate(date.getDate() - i - 1);
-    days.push({
-      date,
-      isCurrentMonth: false,
-      isSelected: isDateSelected(date),
-      isDisabled: isDateDisabled(date)
+  for (let i = firstDay - 1; i >= 0; i--) {
+    const d = new Date(year, month - 1, prevMonthLastDate - i);
+    dates.push({
+      date: d.toISOString().split('T')[0],
+      currentMonth: false
     });
   }
   
-  // 当月の日付を追加
-  for (let date = new Date(firstDay); date <= lastDay; date.setDate(date.getDate() + 1)) {
-    days.push({
-      date: new Date(date),
-      isCurrentMonth: true,
-      isSelected: isDateSelected(date),
-      isDisabled: isDateDisabled(date)
+  // 現在の月の日付を追加
+  for (let i = 1; i <= lastDate; i++) {
+    const d = new Date(year, month, i);
+    dates.push({
+      date: d.toISOString().split('T')[0],
+      currentMonth: true
     });
   }
   
-  // 翌月の日付を追加
-  const remainingDays = 42 - days.length;
+  // 次月の日付を追加
+  const remainingDays = 42 - dates.length; // 6週間分のグリッドを確保
   for (let i = 1; i <= remainingDays; i++) {
-    const date = new Date(lastDay);
-    date.setDate(date.getDate() + i);
-    days.push({
-      date,
-      isCurrentMonth: false,
-      isSelected: isDateSelected(date),
-      isDisabled: isDateDisabled(date)
+    const d = new Date(year, month + 1, i);
+    dates.push({
+      date: d.toISOString().split('T')[0],
+      currentMonth: false
     });
   }
   
-  return days;
-});
-
-// 日付が選択されているかどうか
-const isDateSelected = (date) => {
-  const dateStr = date.toISOString().split('T')[0];
-  return !!props.modelValue[dateStr];
+  return dates;
 };
 
-// 日付が無効かどうか
-const isDateDisabled = (date) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return date < today;
+const changeMonth = (delta) => {
+  const newDate = new Date(currentMonth.value);
+  newDate.setMonth(newDate.getMonth() + delta);
+  currentMonth.value = newDate;
 };
 
-// 同じ日付かどうか
-const isSameDay = (date1, date2) => {
-  return date1.getFullYear() === date2.getFullYear() &&
-         date1.getMonth() === date2.getMonth() &&
-         date1.getDate() === date2.getDate();
+const toggleDate = (dateObj) => {
+  if (!dateObj.currentMonth) return;
+  
+  const index = selectedDates.value.indexOf(dateObj.date);
+  if (index === -1) {
+    selectedDates.value.push(dateObj.date);
+  } else {
+    selectedDates.value.splice(index, 1);
+  }
+  selectedDates.value.sort();
+  emit('dates-selected', selectedDates.value);
 };
 
-// 前月へ移動
-const previousMonth = () => {
-  const newDate = new Date(currentDate.value);
-  newDate.setMonth(newDate.getMonth() - 1);
-  currentDate.value = newDate;
+const isSelected = (date) => {
+  return selectedDates.value.includes(date);
 };
 
-// 翌月へ移動
-const nextMonth = () => {
-  const newDate = new Date(currentDate.value);
-  newDate.setMonth(newDate.getMonth() + 1);
-  currentDate.value = newDate;
+const isToday = (date) => {
+  const today = new Date().toISOString().split('T')[0];
+  return date === today;
 };
 </script>
+
+<style scoped>
+.calendar-wrapper {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.calendars-container {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.calendar {
+  width: 100%;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.calendar-header button {
+  background: none;
+  border: none;
+  font-size: 1.2em;
+  cursor: pointer;
+  padding: 5px 10px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.weekday {
+  text-align: center;
+  font-weight: bold;
+  padding: 5px;
+  background-color: #f5f5f5;
+}
+
+.date {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px solid #eee;
+  transition: all 0.2s;
+}
+
+.date:hover:not(.other-month) {
+  background-color: #e3f2fd;
+}
+
+.other-month {
+  color: #ccc;
+  cursor: default;
+}
+
+.selected {
+  background-color: #2196f3;
+  color: white;
+}
+
+.today {
+  border: 2px solid #2196f3;
+}
+
+@media (max-width: 768px) {
+  .calendars-container {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

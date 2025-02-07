@@ -28,6 +28,8 @@ export const useMeetingStore = defineStore('meeting', () => {
     dates: {},  // { '2025-02-04': { timeSlots: [...] } }
     comment: '', // コメント欄
     participants: [], // 参加者の配列
+    organizer: '', // 主催者名
+    meetingName: '', // 会議名
     createdAt: null,
     expiresAt: null
   });
@@ -55,18 +57,26 @@ export const useMeetingStore = defineStore('meeting', () => {
     
     while (
       currentHour < endHour || 
-      (currentHour === endHour && currentMinute < endMinute)
+      (currentHour === endHour && currentMinute <= endMinute)
     ) {
       const start = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
       
+      // 次の時間枠の開始時刻を計算
       currentMinute += 30;
       if (currentMinute >= 60) {
         currentHour += 1;
         currentMinute = 0;
       }
       
+      // 終了時刻を超えないようにチェック
+      if (currentHour > endHour || (currentHour === endHour && currentMinute > endMinute)) {
+        const end = endTime;
+        slots.push({ start, end, available: true });
+        break;
+      }
+      
       const end = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
-      slots.push({ start, end });
+      slots.push({ start, end, available: true });
     }
     
     return slots;
@@ -84,6 +94,8 @@ export const useMeetingStore = defineStore('meeting', () => {
     const meetingDoc = {
       ...meetingData,
       id,
+      organizer: meetingData.organizer || '',
+      meetingName: meetingData.meetingName || '',
       createdAt: Timestamp.fromDate(now),
       expiresAt: meetingData.expiresAt ? Timestamp.fromDate(new Date(meetingData.expiresAt)) : null,
       updatedAt: Timestamp.fromDate(now),
@@ -194,6 +206,12 @@ export const useMeetingStore = defineStore('meeting', () => {
         currentMeeting.value.dates[date] = {};
       }
       currentMeeting.value.dates[date].timeSlots = timeSlots;
+    },
+    setOrganizer: (name) => {
+      currentMeeting.value.organizer = name;
+    },
+    setMeetingName: (name) => {
+      currentMeeting.value.meetingName = name;
     }
   };
 });
